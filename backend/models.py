@@ -31,3 +31,16 @@ class ReopenIn(BaseModel):
 class MaterializeIn(BaseModel):
     partition_key: str | None = None
     fail_simulate: bool = False
+
+
+class SealIn(BaseModel):
+    """关窗+物化合一请求（甲路径同事务写）。"""
+
+    partition_key: str | None = None
+    fail_simulate: bool = False
+
+
+class SealRegisterIn(BaseModel):
+    """封口合一册择定：本仓唯一落地口径为甲。"""
+
+    path: str

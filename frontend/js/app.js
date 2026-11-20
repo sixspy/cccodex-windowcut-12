@@ -130,16 +130,23 @@ createApp({
     }
 
     async function closeWin(id) {
-      actionErr.value = "";
-      const r = await api.post("/api/windows/" + id + "/close", {});
-      if (r && !r.ok) actionErr.value = r.body.detail || "关窗失败";
-      await refresh();
+      // 关窗即合一封口（关窗+物化同事务），保留函数名供旧引用复用。
+      return sealWin(id);
     }
 
     async function materialize(id) {
-      actionErr.value = "";
+      // 物化不再是第二次点击：已关窗时幂等返回既有台账。
       const r = await api.post("/api/windows/" + id + "/materialize", {});
-      if (r && !r.ok) actionErr.value = r.body.detail || "失败";
+      if (r && !r.ok) actionErr.value = r.body.detail || "物化失败";
+      await refresh();
+    }
+
+    async function sealWin(id) {
+      actionErr.value = "";
+      // 唯一合一写入口：后端在同一 SQLite 事务内关窗并写物化行。
+      const r = await api.post("/api/windows/" + id + "/seal", {});
+      if (r && !r.ok) actionErr.value = r.body.detail || "封口合一失败";
+      else if (r) actionErr.value = r.body.already ? "该窗已封口（幂等）" : "封口合一成功：关窗与物化已同事务提交";
       await refresh();
     }
 
@@ -220,6 +227,7 @@ createApp({
       ingest,
       closeWin,
       materialize,
+      sealWin,
       loadRecon,
       reopenStub,
       promoteLate,
@@ -271,7 +279,7 @@ createApp({
     </div>
     <div class="foot">
       <span>业务窗关账 · 本地 SQLite · docker compose 一键起</span>
-      <span>关窗后物化，迟到不进本窗合计 · 多模块空桩待挖题</span>
+      <span>关窗与物化封口合一（同事务）· 迟到不进本窗合计 · 多模块空桩待挖题</span>
     </div>
   </div>
   `,

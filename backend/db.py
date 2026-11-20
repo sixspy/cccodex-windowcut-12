@@ -133,6 +133,14 @@ CREATE TABLE IF NOT EXISTS reject_slips(
   reason TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS seal_unify_ledger(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  path TEXT NOT NULL,
+  actor TEXT,
+  detail TEXT,
+  decided_at TEXT NOT NULL
+);
 """
 
 

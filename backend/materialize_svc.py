@@ -1,14 +1,16 @@
-"""关窗后物化。空桩预留：分区失败回滚 vs 保留成功分区。"""
-from __future__ import annotations
+"""物化台账。物化写路径已并入 seal_svc 的封口合一（甲路径同事务）。
 
-from datetime import datetime
+本模块保留台账只读视图与分区空桩；/materialize 不再独立写台账，而是委托
+合一写路径，杜绝关窗与物化两段之间的可脏间隙。
+"""
+from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
 from db import connect, write_audit
-from locks import release, require_lock
-from models import MaterializeIn
+from models import MaterializeIn, SealIn
+from seal_svc import seal_window
 
 router = APIRouter(tags=["materialize"])
 
@@ -20,53 +22,20 @@ def materialize(
     body: MaterializeIn = MaterializeIn(),
 ):
     user = require_user(authorization)
-    lock_key = f"materialize:{wid}"
+    # 维持原前置语义：未关窗不能物化（合一入口内部也会再判一次）。
     with connect() as conn:
-        require_lock(conn, lock_key, user)
-        try:
-            w = conn.execute("SELECT * FROM windows WHERE id=?", (wid,)).fetchone()
-            if not w:
-                raise HTTPException(404, "窗口不存在")
-            if w["status"] != "已关闭":
-                raise HTTPException(409, "未关窗不能物化")
-            now = datetime.now().isoformat(timespec="seconds")
-            rows = conn.execute(
-                """SELECT COUNT(*) c, COALESCE(SUM(amount),0) s
-                   FROM events WHERE window_id=? AND disposition='窗内'""",
-                (wid,),
-            ).fetchone()
-            partition = body.partition_key or f"{w['name']}-g{w['generation']}"
-            if body.fail_simulate:
-                write_audit(
-                    conn,
-                    user,
-                    "materialize_fail_sim",
-                    str(wid),
-                    {"partition": partition},
-                )
-                conn.commit()
-                raise HTTPException(500, "模拟物化失败（夹具用）")
-            conn.execute(
-                """INSERT INTO materializations(window_id,status,row_count,total_amount,partition_key,created_at)
-                   VALUES (?,?,?,?,?,?)""",
-                (wid, "成功", rows["c"], rows["s"], partition, now),
-            )
-            write_audit(
-                conn,
-                user,
-                "materialize_ok",
-                str(wid),
-                {"row_count": rows["c"], "total_amount": rows["s"], "partition": partition},
-            )
-            conn.commit()
-            return {
-                "row_count": rows["c"],
-                "total_amount": rows["s"],
-                "partition_key": partition,
-            }
-        finally:
-            release(conn, lock_key, user)
-            conn.commit()
+        w = conn.execute("SELECT * FROM windows WHERE id=?", (wid,)).fetchone()
+        if not w:
+            raise HTTPException(404, "窗口不存在")
+        sealed = w["status"] == "已关闭"
+    if not sealed:
+        raise HTTPException(409, "未关窗不能物化")
+    # 已关窗则进入合一写路径：有台账则幂等返回，无台账（遗留窗）则同事务补齐。
+    return seal_window(
+        wid,
+        user,
+        SealIn(partition_key=body.partition_key, fail_simulate=body.fail_simulate),
+    )
 
 
 @router.get("/api/materializations")

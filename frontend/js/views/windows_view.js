@@ -2,7 +2,7 @@
 export const windowsViewTemplate = `
 <div class="card wide" v-show="tab===0">
   <h2>窗口条带</h2>
-  <p class="muted">关窗占窗锁；后到争用只记审计。关窗后才能物化。</p>
+  <p class="muted">关窗与物化封口合一：同库事务一次提交，占合一锁 seal_unify，后到只记争用；期间入账冻结，无可脏间隙。</p>
   <table>
     <thead><tr><th>窗口</th><th>世代</th><th>开启</th><th>关闭</th><th>状态</th><th>操作</th></tr></thead>
     <tbody>
@@ -13,8 +13,7 @@ export const windowsViewTemplate = `
         <td>{{w.close_at}}</td>
         <td>{{w.status}}</td>
         <td>
-          <button class="ghost" @click="closeWin(w.id)">关窗</button>
-          <button class="ghost" @click="materialize(w.id)">物化</button>
+          <button class="ghost" v-if="w.status!=='已关闭'" @click="sealWin(w.id)">关窗物化（封口合一）</button>
           <button class="ghost" @click="loadRecon(w.id)">对账</button>
           <button class="ghost" @click="reopenStub(w.id)">重开空桩</button>
         </td>

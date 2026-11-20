@@ -1,14 +1,12 @@
-"""业务窗开/关/列表。"""
+"""业务窗开/关/列表。关窗写路径已并入 seal_svc 的封口合一（甲路径同事务）。"""
 from __future__ import annotations
-
-from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
 from db import connect, write_audit
-from locks import release, require_lock
-from models import WindowCreateIn
+from models import SealIn, WindowCreateIn
+from seal_svc import seal_window
 
 router = APIRouter(tags=["windows"])
 
@@ -41,28 +39,9 @@ def create_window(body: WindowCreateIn, authorization: AuthHeader = None):
 
 @router.post("/api/windows/{wid}/close")
 def close_window(wid: int, authorization: AuthHeader = None):
+    """关窗即合一封口：关窗与物化在同一事务提交（不再是两次点击的第一段）。"""
     user = require_user(authorization)
-    lock_key = f"window:{wid}"
-    with connect() as conn:
-        require_lock(conn, lock_key, user)
-        try:
-            w = conn.execute("SELECT * FROM windows WHERE id=?", (wid,)).fetchone()
-            if not w:
-                raise HTTPException(404, "窗口不存在")
-            if w["status"] == "已关闭":
-                return {"ok": True, "already": True}
-            now = datetime.now().isoformat(timespec="seconds")
-            token = f"seal-{wid}-{w['generation']}-{now}"
-            conn.execute(
-                "UPDATE windows SET status='已关闭', seal_token=? WHERE id=?",
-                (token, wid),
-            )
-            write_audit(conn, user, "window_close", str(wid), {"seal_token": token})
-            conn.commit()
-            return {"ok": True, "seal_token": token}
-        finally:
-            release(conn, lock_key, user)
-            conn.commit()
+    return seal_window(wid, user, SealIn())
 
 
 @router.get("/api/windows/{wid}")

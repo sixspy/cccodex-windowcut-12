@@ -16,6 +16,7 @@ from locks import router as locks_router
 from materialize_svc import router as materialize_router
 from reconcile_svc import router as reconcile_router
 from reopen_svc import router as reopen_router
+from seal_svc import router as seal_router
 from windows_svc import router as windows_router
 
 PRODUCT = "业务窗关账"
@@ -36,6 +37,7 @@ for r in (
     ingest_router,
     late_router,
     materialize_router,
+    seal_router,
     reconcile_router,
     locks_router,
     audit_router,
